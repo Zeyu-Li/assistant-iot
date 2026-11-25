@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Protocol
+from typing import Any, Mapping, Protocol, runtime_checkable
 
 
 class LanguageModel(Protocol):
@@ -11,3 +11,10 @@ class LanguageModel(Protocol):
         ...
 
     async def generate_text(self, system: str, user: str) -> str: ...
+
+
+@runtime_checkable
+class Preloadable(Protocol):
+    """A model that can be loaded at startup, so the first request is not slowed by the load."""
+
+    async def preload(self) -> None: ...

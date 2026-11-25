@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 
 from assistant.core.executor import CapabilityExecutor
 from assistant.core.registry import Capability, Registry
 from assistant.core.router import Router
-from assistant.core.slots import SlotExtractor, invalid_fields, missing_required
+from assistant.core.slots import PreviousRequest, SlotExtractor, invalid_fields, missing_required
 from assistant.ports.decision import ChoiceAnswer, ChoiceQuestion, DecisionModel
 
 log = logging.getLogger(__name__)
@@ -60,6 +61,18 @@ class _Task:
     asking_for: Optional[str] = None
     reprompts: int = 0
     awaiting_confirmation: bool = False
+    origin: Optional[str] = None
+    """For a follow-up, the full request it follows up on."""
+
+
+@dataclass(frozen=True)
+class _Done:
+    """The last completed request of a follow-up capability, kept briefly for "what about ...?"."""
+
+    capability: Capability
+    request: str
+    arguments: Mapping[str, Any]
+    at: float
 
 
 class DialogueManager:
@@ -73,6 +86,9 @@ class DialogueManager:
         *,
         confirm_threshold: float,
         max_reprompts: int,
+        follow_up_threshold: float = 0.6,
+        follow_up_seconds: float = 60.0,
+        clock: Callable[[], float] = time.monotonic,
         texts: DialogueTexts = DialogueTexts(),
     ) -> None:
         self._registry = registry
@@ -82,16 +98,21 @@ class DialogueManager:
         self._decider = decider
         self._confirm_threshold = confirm_threshold
         self._max_reprompts = max_reprompts
+        self._follow_up_threshold = follow_up_threshold
+        self._follow_up_seconds = follow_up_seconds
+        self._clock = clock
         self._texts = texts
         self._pending: Optional[_Task] = None
+        self._last_done: Optional[_Done] = None
 
     @property
     def in_progress(self) -> bool:
         return self._pending is not None
 
     def reset(self) -> None:
-        """Drop any half-finished task."""
+        """Drop any half-finished task and the follow-up context."""
         self._pending = None
+        self._last_done = None
 
     async def handle(
         self, utterance: str, *, require_addressed: bool = False, quiet_if_unmatched: bool = False
@@ -110,6 +131,10 @@ class DialogueManager:
         return await self._start(text, require_addressed, quiet_if_unmatched or require_addressed)
 
     async def _start(self, text: str, require_addressed: bool, quiet_if_unmatched: bool) -> Optional[Reply]:
+        follow_up = await self._as_follow_up(text)
+        if follow_up is not None:
+            return await self._advance(follow_up)
+
         decision = await self._router.route(text, require_addressed=require_addressed)
         log.info(
             "route=%s confidence=%.2f addressed=%s -> %s",
@@ -124,6 +149,21 @@ class DialogueManager:
         task = _Task(capability, schema, request=text, arguments={**capability.defaults, **extracted})
         return await self._advance(task)
 
+    async def _as_follow_up(self, text: str) -> Optional[_Task]:
+        """The previous request with this utterance's changes, if it only changes a detail of it."""
+        last = self._last_done
+        if last is None or self._clock() - last.at > self._follow_up_seconds:
+            return None
+        p_follow_up = await self._router.follow_up_probability(last.request, text)
+        log.info("follow-up of %s: p=%.2f", last.capability.id, p_follow_up)
+        if p_follow_up < self._follow_up_threshold:
+            return None
+        schema = await self._executor.schema_for(last.capability)
+        changes = await self._extractor.extract(text, schema, previous=PreviousRequest(last.request, last.arguments))
+        if not changes:
+            return None  # nothing to change, so it was not a follow-up after all ("thanks")
+        return _Task(last.capability, schema, request=text, arguments={**last.arguments, **changes}, origin=last.request)
+
     async def _continue(self, task: _Task, text: str) -> Reply:
         if _normalise(text) in CANCEL_PHRASES:
             self._pending = None
@@ -132,9 +172,18 @@ class DialogueManager:
             self._pending = None
             if not await self._agreed(task, text):
                 return Reply(self._texts.not_done)
-            return Reply(await self._executor.execute(task.capability, task.arguments, task.request))
+            return Reply(await self._execute(task))
         task.arguments.update(await self._extractor.extract(text, task.schema, question=task.question))
         return await self._advance(task)
+
+    async def _execute(self, task: _Task) -> str:
+        result = await self._executor.execute(task.capability, task.arguments, task.request)
+        self._last_done = (
+            _Done(task.capability, task.origin or task.request, dict(task.arguments), self._clock())
+            if task.capability.follow_up
+            else None
+        )
+        return result
 
     async def _advance(self, task: _Task) -> Reply:
         for name in invalid_fields(task.schema, task.arguments):
@@ -145,14 +194,14 @@ class DialogueManager:
         if missing:
             return self._ask_for(task, missing[0])
 
-        if task.capability.confirm:
+        if task.capability.needs_confirmation(task.arguments):
             task.awaiting_confirmation = True
             task.question = self._confirm_prompt(task)
             self._pending = task
             return Reply(task.question, expects_response=True)
 
         self._pending = None
-        return Reply(await self._executor.execute(task.capability, task.arguments, task.request))
+        return Reply(await self._execute(task))
 
     def _ask_for(self, task: _Task, slot: str) -> Reply:
         task.reprompts = task.reprompts + 1 if task.asking_for == slot else 0

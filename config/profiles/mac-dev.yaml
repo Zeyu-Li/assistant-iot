@@ -17,7 +17,7 @@ decision:
   timeout_seconds: 30
 
 llm:
-  adapter: openai_compat
+  adapter: ollama   # openai_compat plus loading the model at startup and keeping it loaded
   base_url: http://127.0.0.1:11434/v1
   model: gemma3:12b
 
@@ -63,7 +63,7 @@ dialogue:
   initial_mode: wake_word
 
 voice:   # models from: poetry run python scripts/fetch_models.py
-  wake_phrases: ["hey computer"]
+  wake_phrases: ["hey nova"]
   wake: {adapter: sherpa_kws, dir: models/kws, threshold: 0.25}
   vad: {adapter: silero, model: models/vad/silero_vad.onnx, min_silence_seconds: 0.6}
   stt: {adapter: moonshine, dir: models/asr-moonshine, threads: 2}

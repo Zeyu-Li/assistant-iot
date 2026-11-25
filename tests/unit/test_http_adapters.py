@@ -7,9 +7,11 @@ import httpx
 import pytest
 
 from assistant.adapters.decision.systemone_http import SystemOneDecisionModel
+from assistant.adapters.llm.ollama import OllamaLanguageModel, OllamaSettings
 from assistant.adapters.llm.openai_compat import OpenAICompatLanguageModel, OpenAICompatSettings
 from assistant.adapters.net.allowlist import EgressBlocked, HttpClientFactory
 from assistant.ports.decision import ChoiceQuestion, YesNoQuestion
+from assistant.ports.language import Preloadable
 
 Handler = Callable[[httpx.Request], httpx.Response]
 
@@ -91,6 +93,18 @@ async def test_openai_compat_constrains_json_and_strips_thinking() -> None:
 async def test_openai_compat_invalid_json_returns_empty() -> None:
     llm = OpenAICompatLanguageModel(client(Recorder(chat_response("not json"))), OpenAICompatSettings(base_url="x", model="m"))
     assert await llm.generate_json("s", "u", {"type": "object"}) == {}
+
+
+async def test_ollama_preload_pins_model_through_native_api() -> None:
+    server = Recorder({"done": True})
+    base_url = "http://127.0.0.1:11434/v1"
+    llm = OllamaLanguageModel(client(server, base_url=base_url), OllamaSettings(base_url=base_url, model="gemma3:12b"))
+
+    assert isinstance(llm, Preloadable)
+    await llm.preload()
+
+    assert str(server.requests[0].url) == "http://127.0.0.1:11434/api/generate"
+    assert server.bodies == [{"model": "gemma3:12b", "keep_alive": -1}]
 
 
 async def test_allowlist_blocks_unlisted_hosts() -> None:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Literal, Optional
+from typing import Any, Iterable, Iterator, Literal, Mapping, Optional, Union
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -42,8 +42,13 @@ class Capability(BaseModel):
     """JSON Schema for the arguments. Omit on an mcp capability to use the tool's inputSchema."""
     prompts: dict[str, str] = Field(default_factory=dict)
     defaults: dict[str, Any] = Field(default_factory=dict)
-    confirm: bool = False
+    confirm: Union[bool, dict[str, tuple[str, ...]]] = False
+    """Ask before running: always (true), or only when an argument has one of the listed
+    values, for example ``{action: [clear]}`` so only clearing a list is confirmed."""
     confirm_prompt: str = ""
+    follow_up: bool = False
+    """A short follow-up such as "what about Saturday?" re-runs this capability with the
+    previous arguments, changing only what the follow-up names."""
     mcp: Optional[McpBinding] = None
     render: RenderSpec = RenderSpec()
 
@@ -54,6 +59,11 @@ class Capability(BaseModel):
         if (self.kind == "mcp") != (self.mcp is not None):
             raise ValueError(f"{self.id}: an 'mcp' binding is required for kind 'mcp' and only allowed there")
         return self
+
+    def needs_confirmation(self, arguments: Mapping[str, Any]) -> bool:
+        if isinstance(self.confirm, bool):
+            return self.confirm
+        return any(arguments.get(field) in values for field, values in self.confirm.items())
 
     @property
     def option_text(self) -> str:

@@ -7,9 +7,12 @@
 #                   capability, omit it to use the tool's own inputSchema.
 #   prompts         question to ask when a required slot is missing
 #   defaults        argument values used when the user does not give one
-#   confirm         ask "should I go ahead?" before running (use for anything that writes)
+#   confirm         ask "should I go ahead?" before running: true, or only for some argument
+#                   values, e.g. {action: [clear]}
+#   follow_up       a follow-up like "what about Saturday?" re-runs it with the previous arguments
 #   render          mcp only: "summary" (LLM turns the result into speech) or "fixed" text
 #   x-verbatim      on a slot property: drop the value unless it uses the user's own words
+#   allOf if/then   slots required only for some actions, e.g. a timer's duration when setting one
 #
 # Adding a capability = one entry here (+ a handler in flows/ for kind: flow).
 
@@ -32,6 +35,219 @@ capabilities:
           type: string
           format: date
           description: Day of the forecast as YYYY-MM-DD.
+    follow_up: true
+
+  - id: timer
+    kind: flow
+    description: >-
+      Countdown timers the user starts on this assistant - start one for a length of time, ask how
+      long is left, or cancel it. Not questions about how long something takes.
+    examples:
+      - set a timer for 10 minutes
+      - how much time is left on the pasta timer
+      - cancel the timer
+    slots:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [set, check, cancel]
+          description: set starts a new timer; check asks how long is left; cancel stops one.
+        duration:
+          type: string
+          format: duration
+          description: >-
+            How long the new timer runs, as an ISO 8601 duration, for example PT10M for ten
+            minutes, PT1H30M for an hour and a half, PT45S for 45 seconds.
+          x-verbatim: true
+        label:
+          type: string
+          description: A name the user gave the timer, without the word timer, for example "pasta".
+          x-verbatim: true
+      allOf:
+        - if: {properties: {action: {const: set}}}
+          then: {required: [duration]}
+    defaults: {action: set}
+    prompts:
+      duration: For how long?
+
+  - id: alarm
+    kind: flow
+    description: Alarms that go off at a clock time - set an alarm, list alarms, or cancel one.
+    examples:
+      - wake me up at 7
+      - set an alarm for 6:30 tomorrow morning
+      - what alarms do I have
+      - cancel my 7 AM alarm
+    slots:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [set, list, cancel]
+        time:
+          type: string
+          format: date-time
+          description: When the alarm goes off (for cancel, the time of the alarm to cancel).
+          x-verbatim: true
+        label:
+          type: string
+          description: What the alarm is for, only if the user said, for example "take the medicine".
+          x-verbatim: true
+      allOf:
+        - if: {properties: {action: {const: set}}}
+          then: {required: [time]}
+    defaults: {action: set}
+    prompts:
+      time: What time should the alarm go off?
+
+  - id: lists
+    kind: flow
+    description: The user's own lists kept on this device, such as the shopping or to-do list - add items, take them off, read the list out, or clear it.
+    examples:
+      - add milk and eggs to the shopping list
+      - what's on my to-do list
+      - take bread off the shopping list
+      - put call the plumber on my to do list
+    slots:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [add, remove, read, clear]
+        list:
+          type: string
+          description: Which list, for example "shopping", "to-do" or "packing". Leave out if the user did not say.
+          x-verbatim: true
+        items:
+          type: array
+          items: {type: string}
+          description: Each item as its own entry, in the user's words, for example ["milk", "eggs"].
+          x-verbatim: true
+      required: [action]
+      allOf:
+        - if: {properties: {action: {enum: [add, remove]}}}
+          then: {required: [items]}
+    defaults: {list: shopping}
+    prompts:
+      action: Should I add something, take something off, or read the list?
+      items: What should I put on the list?
+    confirm: {action: [clear]}
+
+  - id: memory
+    kind: flow
+    description: >-
+      Personal facts the user told this assistant to remember - save one (where they parked, a
+      wifi password, a locker code), answer a later question about one, or forget one.
+    examples:
+      - remember that I parked on level 3
+      - where did I park
+      - remember the wifi password is sunflower22
+      - what's the wifi password
+      - forget the wifi password
+    slots:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [remember, recall, forget]
+          description: >-
+            remember when the user states a fact to save; recall when the user asks a question
+            ("where did I park?", "what's the wifi password?"); forget when they want it deleted.
+        key:
+          type: string
+          description: >-
+            A short name for what the fact is about, for example "where I parked", "wifi
+            password" or "Sam's shoe size". Use the same kind of name when saving and asking.
+        value:
+          type: string
+          description: The fact itself, in the user's words, only when saving, for example "level 3".
+          x-verbatim: true
+      required: [action, key]
+      allOf:
+        - if: {properties: {action: {const: remember}}}
+          then: {required: [value]}
+    prompts:
+      action: Should I remember something, look something up, or forget something?
+      key: What is it about?
+      value: What should I remember?
+    confirm: {action: [forget]}
+
+  - id: date_time
+    kind: flow
+    description: >-
+      Tell what time of day it is right now or today's date (here or in another city), which
+      weekday a given date is, or how many days are left until a date.
+    examples:
+      - what time is it
+      - what's today's date
+      - what time is it in Tokyo
+      - what day of the week is July 4th
+      - how many days until Christmas
+    slots:
+      type: object
+      properties:
+        question:
+          type: string
+          enum: [time, date, weekday, days_until]
+        date:
+          type: string
+          format: date
+          description: The date asked about, for weekday and days_until.
+          x-verbatim: true
+        place:
+          type: string
+          description: A city or country, only if the user asked about somewhere else.
+          x-verbatim: true
+      required: [question]
+      allOf:
+        - if: {properties: {question: {enum: [weekday, days_until]}}}
+          then: {required: [date]}
+    prompts:
+      date: Which date?
+
+  - id: unit_conversion
+    kind: flow
+    description: Convert an amount from one unit to another - length, weight, volume, cooking measures, temperature, speed, area.
+    examples:
+      - how many tablespoons are in a cup
+      - convert 70 fahrenheit to celsius
+      - what is 5 kilometers in miles
+    slots:
+      type: object
+      properties:
+        value:
+          type: number
+          description: The amount to convert; 1 when the user asks "how many X in a Y".
+        from_unit:
+          type: string
+          description: The unit the amount is in, as an English unit name, for example "cup", "fahrenheit", "miles per hour".
+        to_unit:
+          type: string
+          description: The unit to convert to, as an English unit name.
+      required: [from_unit, to_unit]
+    defaults: {value: 1}
+    prompts:
+      to_unit: What should I convert it to?
+
+  - id: math
+    kind: flow
+    description: Calculate arithmetic - add, subtract, multiply, divide, percentages, tips, powers, square roots.
+    examples:
+      - what's 15 percent of 80
+      - what is 12 times 17
+      - square root of 144
+    slots:
+      type: object
+      properties:
+        expression:
+          type: string
+          description: >-
+            The calculation written as a Python arithmetic expression without computing it, for
+            example "0.15 * 80", "12 * 17", "sqrt(144)", "(45 + 30) / 3".
+      required: [expression]
+    prompts:
+      expression: What should I calculate?
 
   - id: play_music
     kind: flow
@@ -122,7 +338,9 @@ capabilities:
 
   - id: read_calendar
     kind: mcp
-    description: Look up events already on the user's calendar - schedule, meetings, free time (read only, changes nothing).
+    description: >-
+      Look up events on the user's calendar - what meetings, appointments or plans they have, when
+      one is, whether they are free or busy (read only, changes nothing).
     examples:
       - what's on my calendar today
       - do I have anything Friday afternoon
@@ -146,6 +364,7 @@ capabilities:
     render:
       mode: summary
       instruction: Give each event's start time and title in order. Say plainly if there are none.
+    follow_up: true
 
   - id: create_calendar_event
     kind: flow
@@ -207,8 +426,8 @@ capabilities:
 
   - id: chat
     kind: flow
-    description: Answer a general-knowledge question, do math or unit conversions, define or spell a word, or tell a joke.
+    description: Answer a general-knowledge question, define or spell a word, or tell a joke.
     examples:
       - tell me a joke
-      - how many ounces are in a cup
+      - how do you spell necessary
       - what's the capital of Australia

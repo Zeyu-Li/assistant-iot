@@ -6,12 +6,15 @@ Skipped unless the models are present (poetry run python scripts/fetch_models.py
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
 import numpy as np
 import pytest
 
+from assistant.adapters.fakes import MemoryStore
+from assistant.core.alerts import AlertScheduler
 from assistant.core.dialogue import Reply
 from assistant.core.listening import ListeningController, ListeningMode
 from assistant.core.voice import VoiceLoop
@@ -31,7 +34,7 @@ def models():  # type: ignore[no-untyped-def]
     return {
         "tts": sherpa.piper(sherpa.PiperSettings(dir=MODELS / "tts-piper", model_file="en_US-lessac-medium.onnx")),
         "stt": sherpa.moonshine(sherpa.MoonshineSettings(dir=MODELS / "asr-moonshine")),
-        "make_wake": lambda: sherpa.SherpaWakeWord(sherpa.SherpaWakeWordSettings(dir=MODELS / "kws"), ["hey computer"]),
+        "make_wake": lambda: sherpa.SherpaWakeWord(sherpa.SherpaWakeWordSettings(dir=MODELS / "kws"), ["hey nova"]),
         "make_vad": lambda: sherpa.SileroVad(sherpa.SileroVadSettings(model=MODELS / "vad" / "silero_vad.onnx")),
     }
 
@@ -39,6 +42,7 @@ def models():  # type: ignore[no-untyped-def]
 class Heard:
     def __init__(self) -> None:
         self.listening = ListeningController(ListeningMode.WAKE_WORD, follow_up_seconds=8)
+        self.alerts = AlertScheduler(MemoryStore(), lambda: datetime.now(timezone.utc))
         self.utterances: list[tuple[str, bool]] = []
 
     async def handle_utterance(self, text: str, *, wake_word_detected: bool) -> Optional[Reply]:
@@ -72,7 +76,7 @@ async def run_through_loop(models, spoken: str) -> list[tuple[str, bool]]:  # ty
     heard = Heard()
     loop = VoiceLoop(
         heard, SilentMic(), models["make_wake"](), models["make_vad"](), models["stt"], models["tts"],  # type: ignore[arg-type]
-        NoSpeaker(), ["hey computer"],
+        NoSpeaker(), ["hey nova"],
     )
     samples = to_capture_rate(models["tts"].synthesize(spoken))
     for start in range(0, len(samples), 1600):
@@ -81,7 +85,7 @@ async def run_through_loop(models, spoken: str) -> list[tuple[str, bool]]:  # ty
 
 
 async def test_wake_phrase_then_request_is_transcribed(models) -> None:  # type: ignore[no-untyped-def]
-    utterances = await run_through_loop(models, "Hey computer, what's the weather tomorrow?")
+    utterances = await run_through_loop(models, "Hey nova, what's the weather tomorrow?")
 
     assert len(utterances) == 1
     text, wake = utterances[0]

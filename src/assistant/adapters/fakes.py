@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 import re
 from collections import deque
@@ -122,6 +123,19 @@ class FakeMusicPlayer:
 
     async def adjust_volume(self, delta: int) -> int:
         return await self.set_volume(self.volume + delta)
+
+
+class MemoryStore:
+    """DocumentStore kept in a dict (documents are copied, as a file round trip would)."""
+
+    def __init__(self) -> None:
+        self.documents: dict[str, dict[str, Any]] = {}
+
+    def load(self, name: str) -> dict[str, Any]:
+        return copy.deepcopy(self.documents.get(name, {}))
+
+    def save(self, name: str, document: dict[str, Any]) -> None:
+        self.documents[name] = copy.deepcopy(document)
 
 
 class FakeWeatherProvider:

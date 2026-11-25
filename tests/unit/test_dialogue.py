@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from conftest import TODAY, Harness, route
+from conftest import TEST_CAPABILITIES, TODAY, Harness, route
+
+from assistant.core.registry import Capability
 
 from assistant.ports.decision import ChoiceAnswer, YesNoAnswer
 
@@ -134,3 +136,80 @@ async def test_overheard_speech_stays_silent_when_not_addressed() -> None:
 
     assert await h.dialogue.handle("the weather was awful on our trip", require_addressed=True) is None
     assert h.weather.requests == []
+
+
+LIST_CAPABILITY = Capability.model_validate({
+    "id": "lists", "kind": "flow", "description": "Lists.",
+    "slots": {"type": "object", "properties": {"action": {"type": "string", "enum": ["add", "clear"]}}},
+    "confirm": {"action": ["clear"]},
+})
+
+
+def test_conditional_confirmation() -> None:
+    assert not LIST_CAPABILITY.needs_confirmation({"action": "add"})
+    assert LIST_CAPABILITY.needs_confirmation({"action": "clear"})
+
+
+def weather_with_follow_ups() -> list[Capability]:
+    return [c.model_copy(update={"follow_up": True}) if c.id == "weather" else c for c in TEST_CAPABILITIES]
+
+
+def follow(p: float) -> ChoiceAnswer:
+    return route("follow_up", p, others=("new",))
+
+
+async def test_follow_up_reuses_previous_arguments() -> None:
+    h = Harness(
+        {"route": [route("weather")], "follow_up": [follow(0.95)]},
+        json_responses=[{"location": "Denver", "date": "2026-11-26"}, {"date": "2026-11-28"}],
+        capabilities=weather_with_follow_ups(),
+    )
+
+    await h.dialogue.handle("will it snow in Denver tomorrow")
+    reply = await h.dialogue.handle("what about Saturday")
+
+    assert reply is not None and reply.text.startswith("On Saturday in Denver")
+    assert h.weather.requests[-1] == ("Denver", TODAY.replace(day=28))
+    assert "Earlier the user said: will it snow in Denver tomorrow" in h.decider.states[-1]
+
+
+async def test_new_request_after_a_follow_up_capability_is_routed_normally() -> None:
+    h = Harness(
+        {"route": [route("weather"), route("play_music")], "follow_up": [follow(0.1)]},
+        json_responses=[{"location": "Denver"}, {"query": "jazz"}],
+        capabilities=weather_with_follow_ups(),
+    )
+
+    await h.dialogue.handle("weather in Denver")
+    reply = await h.dialogue.handle("play some jazz")
+
+    assert reply is not None and h.music.actions == ["play:jazz"]
+
+
+async def test_follow_up_context_expires() -> None:
+    now = [0.0]
+    h = Harness(
+        {"route": [route("weather"), route("weather")]},  # no follow_up answers queued: it must not be asked
+        json_responses=[{"location": "Denver"}, {}],
+        capabilities=weather_with_follow_ups(),
+        clock=lambda: now[0],
+    )
+
+    await h.dialogue.handle("weather in Denver")
+    now[0] = 61.0
+    reply = await h.dialogue.handle("what about Saturday")
+
+    assert reply is not None and h.weather.requests[-1][0] == "Mountain View"
+
+
+async def test_follow_up_that_changes_nothing_is_routed_normally() -> None:
+    h = Harness(
+        {"route": [route("weather"), route("none")], "follow_up": [follow(0.9)]},
+        json_responses=[{"location": "Denver"}, {}],
+        capabilities=weather_with_follow_ups(),
+    )
+
+    await h.dialogue.handle("weather in Denver")
+    reply = await h.dialogue.handle("thanks")
+
+    assert reply is not None and reply.text == "Sorry, I can't help with that."

@@ -4,14 +4,18 @@ from __future__ import annotations
 
 from typing import Optional
 
+from assistant.core.alerts import AlertScheduler
 from assistant.core.dialogue import DialogueManager, Reply
 from assistant.core.listening import ListeningController, ListeningMode
 
+DISMISSED_TEXT = "Okay."
+
 
 class Assistant:
-    def __init__(self, dialogue: DialogueManager, listening: ListeningController) -> None:
+    def __init__(self, dialogue: DialogueManager, listening: ListeningController, alerts: AlertScheduler) -> None:
         self._dialogue = dialogue
         self.listening = listening
+        self.alerts = alerts
         listening.on_change(self._on_mode_change)
 
     def _on_mode_change(self, mode: ListeningMode) -> None:
@@ -21,6 +25,8 @@ class Assistant:
     async def handle_utterance(self, text: str, *, wake_word_detected: bool) -> Optional[Reply]:
         if not self.listening.accepts_speech(wake_word_detected=wake_word_detected):
             return None
+        if self.alerts.dismiss():
+            return Reply(DISMISSED_TEXT)  # whatever was said while it rang, it meant "stop"
         # Answers to the assistant's own question never need the "is this for me" check.
         require_addressed = not self._dialogue.in_progress and self.listening.needs_addressed_check(
             wake_word_detected=wake_word_detected

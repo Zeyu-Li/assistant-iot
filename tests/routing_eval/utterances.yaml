@@ -121,11 +121,95 @@ update_calendar_event:
   - shift standup to 10am tomorrow
   - postpone the plumber visit to Saturday morning
 
+timer:
+  - start a timer for 25 minutes
+  - timer for three minutes
+  - set a 45 second timer
+  - how long until the timer goes off
+  - how much time do I have left on the timer
+  - stop the egg timer
+  - set a timer for an hour called laundry
+  - remove my timer
+  - give me a five minute timer
+  - is my timer still running
+
+alarm:
+  - set an alarm for 5:45 am
+  - wake me at 8 tomorrow
+  - I need an alarm at noon
+  - alarm for 6 on Monday
+  - do I have any alarms set
+  - what time is my alarm
+  - delete my alarm for tomorrow
+  - turn off the 6:30 alarm
+  - set an alarm in the morning for 7:15
+  - get me up at 6 on Saturday
+
+lists:
+  - add bananas to the grocery list
+  - put paper towels on my shopping list
+  - read me my shopping list
+  - what do I need from the store
+  - remove milk from my list
+  - add pick up dry cleaning to my to-do list
+  - what's on the to do list
+  - delete everything from my shopping list
+  - cross eggs off my list
+  - I'm out of batteries, add them to the list
+
+memory:
+  - remember my locker combination is 12 34 56
+  - remember that Sam's shoe size is 10
+  - what's my locker combination
+  - what size shoe does Sam wear
+  - where's the car parked
+  - remember I put my passport in the desk drawer
+  - where did I put my passport
+  - forget where I parked
+  - delete the note about the locker
+  - note that the garage code is 4512
+
+date_time:
+  - what's the time
+  - what day is it
+  - what's the date
+  - what time is it in London
+  - what time is it in New York right now
+  - what day of the week is Christmas
+  - how many days until New Year's
+  - how many days until March 3rd
+  - is today Thursday
+  - what year is it
+
+unit_conversion:
+  - how many teaspoons are in a tablespoon
+  - convert 10 miles to kilometers
+  - how many grams in an ounce
+  - what's 100 celsius in fahrenheit
+  - how many cups in a liter
+  - how many pounds is 3 kilograms
+  - how many ounces in a pound
+  - what's 30 meters in feet
+  - how many milliliters in a cup
+  - 20 degrees celsius in fahrenheit
+
+math:
+  - what's 15 percent of 80
+  - what is 345 plus 789
+  - what's 2 to the power of 10
+  - divide 100 by 7
+  - what's an 18 percent tip on 64 dollars
+  - what is 7 times 8
+  - what's the square root of 81
+  - what's 1000 minus 357
+  - what is half of 250
+  - 37 times 12
+
 chat:
   - tell me a joke
-  - how many teaspoons are in a tablespoon
+  - who painted the Mona Lisa
   - who wrote Pride and Prejudice
-  - what's 15 percent of 80
+  - define serendipity
   - how do you say thank you in Japanese
   - why is the sky blue
   - give me a fun fact
@@ -133,7 +217,7 @@ chat:
   - what's the capital of Canada
   - spell necessary
   - how far is the moon
-  - convert 10 miles to kilometers
+  - what's the tallest mountain in the world
 
 none:
   - text: turn on the living room lights
@@ -145,6 +229,7 @@ none:
   - text: set the thermostat to 70
   - text: book a flight to New York
   - text: buy more paper towels
+    also_ok: [lists]
   - text: search the web for cheap laptops
   - text: open Netflix on the TV
   - text: transfer 50 dollars to Sam

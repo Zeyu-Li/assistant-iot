@@ -10,9 +10,19 @@ from pathlib import Path
 
 from assistant.adapters.control.unix_socket import send
 from assistant.adapters.google.oauth import login
-from assistant.app import DECISION_ADAPTERS, build, build_assistant, build_tool_clients, build_tts, build_voice_loop
+from assistant.app import (
+    DECISION_ADAPTERS,
+    build,
+    build_assistant,
+    build_tool_clients,
+    build_tts,
+    build_voice_loop,
+    make_clock,
+)
 from assistant.config import Profile, load_profile, resolve_profile_path
+from assistant.core.alerts import Alert
 from assistant.core.listening import ListeningMode
+from assistant.flows.alerts import announcement
 from assistant.core.registry import Registry
 from assistant.eval_router import load_examples, report, score
 
@@ -46,7 +56,8 @@ def main(argv: list[str] | None = None) -> int:
 
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING,
-        format="%(levelname)s %(name)s: %(message)s",
+        format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
         stream=sys.stderr,
     )
     profile = load_profile(resolve_profile_path(args.profile, args.config_dir))
@@ -85,7 +96,13 @@ def main(argv: list[str] | None = None) -> int:
 async def _listen(profile: Profile, capabilities: Path) -> int:
     assistant = await build_assistant(profile, capabilities)
     voice_loop, control = build_voice_loop(profile, assistant)
+    clock = make_clock(profile.assistant.timezone)
+
+    async def ring(alert: Alert) -> None:
+        await voice_loop.ring(announcement(alert, clock()))
+
     server = await control.serve()
+    alerts = asyncio.create_task(assistant.alerts.run(ring))
     phrases = " / ".join(profile.voice.wake_phrases) if profile.voice else ""
     print(f"Listening ({assistant.listening.mode.value}). Wake phrase: {phrases}. Ctrl-C to stop.")
     try:
@@ -93,6 +110,7 @@ async def _listen(profile: Profile, capabilities: Path) -> int:
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass
     finally:
+        alerts.cancel()
         server.close()
     return 0
 
@@ -119,6 +137,12 @@ async def _eval_router(profile: Profile, capabilities: Path, examples_path: Path
 
 async def _chat(profile: Profile, capabilities: Path) -> int:
     assistant = await build_assistant(profile, capabilities)
+    clock = make_clock(profile.assistant.timezone)
+
+    async def ring(alert: Alert) -> None:
+        print(f"\n[{alert.kind}] assistant> {announcement(alert, clock())}")
+
+    alerts = asyncio.create_task(assistant.alerts.run(ring))  # keep a reference, or it can be collected
     print(REPL_HELP)
     loop = asyncio.get_running_loop()
     while True:

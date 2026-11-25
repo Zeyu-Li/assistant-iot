@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Iterable, Mapping, Optional
+from typing import Callable, Iterable, Mapping, Optional
 
 import pytest
 
@@ -103,8 +103,10 @@ class Harness:
         max_reprompts: int = 2,
         route_threshold: float = 0.5,
         calendar_tools: Optional[list[ToolSpec]] = None,
+        capabilities: Optional[list[Capability]] = None,
+        clock: Callable[[], float] = lambda: 0.0,
     ) -> None:
-        self.registry = Registry(TEST_CAPABILITIES)
+        self.registry = Registry(capabilities if capabilities is not None else TEST_CAPABILITIES)
         self.decider = ScriptedDecisionModel(decisions)
         self.llm = ScriptedLanguageModel(json_responses, text_responses)
         self.music = FakeMusicPlayer()
@@ -130,6 +132,8 @@ class Harness:
             self.decider,
             confirm_threshold=0.6,
             max_reprompts=max_reprompts,
+            follow_up_seconds=60,
+            clock=clock,
         )
 
 

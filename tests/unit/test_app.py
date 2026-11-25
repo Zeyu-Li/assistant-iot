@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from conftest import REPO_ROOT
 
 from assistant.app import build_assistant
 from assistant.config import load_profile
+from assistant.core.alerts import Alert
 from assistant.core.listening import ListeningMode
 from assistant.core.registry import Capability, Registry
 
@@ -64,3 +66,21 @@ async def test_startup_fails_when_pinned_tool_is_missing(capabilities_path: Path
 
     with pytest.raises(LookupError, match="search_threads"):
         await build_assistant(load_profile(profile_path), capabilities_path)
+
+
+async def test_speech_while_an_alert_rings_dismisses_it(capabilities_path: Path) -> None:
+    assistant = await build_assistant(load_profile(REPO_ROOT / "config/profiles/fake.yaml"), capabilities_path)
+    assistant.alerts.ringing = Alert("t1", "timer", datetime(2026, 11, 25, tzinfo=timezone.utc))
+
+    reply = await assistant.handle_utterance("stop", wake_word_detected=True)
+
+    assert reply is not None and reply.text == "Okay."
+    assistant.alerts.ringing = None
+    again = await assistant.handle_utterance("tell me a joke", wake_word_detected=True)
+    assert again is not None and again.text != "Okay."  # back to normal once it stopped ringing
+
+
+async def test_fake_profile_keeps_data_in_memory(capabilities_path: Path) -> None:
+    profile = load_profile(REPO_ROOT / "config/profiles/fake.yaml")
+    assert profile.storage.adapter == "memory"
+    assert load_profile(REPO_ROOT / "config/profiles/mac-dev.yaml").storage.adapter == "json_file"

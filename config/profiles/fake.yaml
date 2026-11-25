@@ -9,6 +9,7 @@ decision: {adapter: fake}
 llm: {adapter: fake}
 weather: {adapter: fake}
 music: {adapter: fake}
+storage: {adapter: memory}   # alarms, lists and notes are forgotten on exit
 
 mcp_servers:
   gmail:

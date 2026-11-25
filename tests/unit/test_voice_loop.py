@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import deque
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
 import numpy as np
 
 from assistant.adapters.control.unix_socket import ControlServer
+from assistant.adapters.fakes import MemoryStore
+from assistant.core.alerts import Alert, AlertScheduler
 from assistant.core.dialogue import Reply
 from assistant.core.listening import ListeningController, ListeningMode
 from assistant.core.voice import VoiceLoop
@@ -31,6 +35,7 @@ class RecordingAssistant:
 
     def __init__(self, listening: ListeningController) -> None:
         self.listening = listening
+        self.alerts = AlertScheduler(MemoryStore(), lambda: datetime(2026, 11, 25, 9, 0, tzinfo=timezone.utc))
         self.heard: list[tuple[str, bool]] = []
 
     async def handle_utterance(self, text: str, *, wake_word_detected: bool) -> Optional[Reply]:
@@ -187,3 +192,38 @@ def test_control_socket_protocol() -> None:
     assert control.respond("mode wake_word") == "ok wake_word" and listening.mode is ListeningMode.WAKE_WORD
     assert control.respond("mode loud").startswith("error")
     assert control.respond("rm -rf /").startswith("error")
+
+
+def ringing(rig: Rig) -> None:
+    rig.assistant.alerts.ringing = Alert("t1", "timer", datetime(2026, 11, 25, 9, 0, tzinfo=timezone.utc))
+
+
+async def test_ring_repeats_until_its_limit_when_nobody_answers() -> None:
+    rig = make(ListeningMode.WAKE_WORD, [], [], [])
+    ringing(rig)
+
+    await rig.loop.ring("Your timer is done.", repeats=3, gap_seconds=0.01)
+
+    assert rig.tts.spoken == ["Your timer is done."] * 3
+    assert rig.assistant.listening.in_follow_up()  # "stop" works without the wake phrase
+
+
+async def test_wake_phrase_dismisses_a_ring_and_the_rest_of_that_sentence_is_dropped() -> None:
+    rig = make(ListeningMode.WAKE_WORD, [True, False], [0, 1], ["hey computer stop"])
+    ringing(rig)
+    ring = asyncio.create_task(rig.loop.ring("Your timer is done.", repeats=5, gap_seconds=5))
+    await asyncio.sleep(0.01)  # first ring played; now waiting to be dismissed
+
+    await rig.loop.process(FRAME)  # wake phrase -> dismiss
+    await rig.loop.process(FRAME)  # the segment "hey computer stop" ends
+    await asyncio.wait_for(ring, 1)
+
+    assert rig.tts.spoken == ["Your timer is done."]
+    assert rig.assistant.heard == []  # neither transcribed as a request nor answered
+
+
+async def test_frames_are_ignored_while_speaking() -> None:
+    rig = make(ListeningMode.WAKE_WORD, [True], [1], ["hey computer what time is it"])
+    async with rig.loop._speaking:  # e.g. an alarm is mid-sentence
+        await rig.loop.process(FRAME)
+    assert rig.script.wakes  # the wake detector never saw the frame

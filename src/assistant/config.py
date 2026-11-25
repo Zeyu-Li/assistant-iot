@@ -40,6 +40,8 @@ class RouterSettings(_Strict):
     route_threshold: float = Field(0.5, ge=0, le=1)
     addressed_threshold: float = Field(0.7, ge=0, le=1)
     confirm_threshold: float = Field(0.6, ge=0, le=1)
+    follow_up_threshold: float = Field(0.6, ge=0, le=1)
+    """How sure the decision model must be that "what about Saturday?" continues the last request."""
     include_examples: bool = False
     """Show example phrasings next to each option. Small encoders such as Laya have a tight
     option-token budget, so leave this off for them; LLM-based deciders benefit from it."""
@@ -53,11 +55,14 @@ class NetworkSettings(_Strict):
 class DialogueSettings(_Strict):
     max_reprompts: int = Field(2, ge=0)
     follow_up_seconds: float = Field(8.0, ge=0)
+    """After a reply, how long the assistant keeps listening without the wake phrase."""
+    context_seconds: float = Field(60.0, ge=0)
+    """How long a request stays available for follow-ups such as "what about Saturday?"."""
     initial_mode: Literal["muted", "wake_word", "open_mic"] = "wake_word"
 
 
 class VoiceSettings(_Strict):
-    wake_phrases: tuple[str, ...] = ("hey computer",)
+    wake_phrases: tuple[str, ...] = ("hey nova",)
     """Plain text; any English phrase works (two or more words wake less by accident)."""
     wake: AdapterSettings
     vad: AdapterSettings
@@ -77,6 +82,8 @@ class Profile(_Strict):
     llm: AdapterSettings
     weather: AdapterSettings
     music: AdapterSettings
+    storage: AdapterSettings = AdapterSettings(adapter="json_file", dir="~/.local/share/assistant-iot")
+    """Where alarms, lists and remembered notes are kept: json_file (with ``dir``) or memory."""
     mcp_servers: dict[str, AdapterSettings] = Field(default_factory=dict)
     router: RouterSettings = RouterSettings()
     dialogue: DialogueSettings = DialogueSettings()

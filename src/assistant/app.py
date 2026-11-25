@@ -17,13 +17,16 @@ import httpx
 from assistant.adapters import fakes
 from assistant.adapters.decision.systemone_http import SystemOneDecisionModel, SystemOneSettings
 from assistant.adapters.google.oauth import GoogleTokenProvider, make_store
+from assistant.adapters.llm.ollama import OllamaLanguageModel, OllamaSettings
 from assistant.adapters.llm.openai_compat import OpenAICompatLanguageModel, OpenAICompatSettings
 from assistant.adapters.mcp.client import McpHttpSettings, McpHttpToolClient
 from assistant.adapters.music.brave_youtube import BraveYouTubePlayer, BraveYouTubeSettings
 from assistant.adapters.net.allowlist import HttpClientFactory
+from assistant.adapters.store.json_file import JsonFileStore
 from assistant.adapters.weather.open_meteo import OpenMeteoWeatherProvider
 from assistant.adapters.control.unix_socket import ControlServer
 from assistant.config import AdapterSettings, Profile
+from assistant.core.alerts import AlertScheduler
 from assistant.core.dialogue import DialogueManager
 from assistant.core.executor import CapabilityExecutor
 from assistant.core.listening import ListeningController, ListeningMode
@@ -33,16 +36,23 @@ from assistant.core.render import ResultRenderer
 from assistant.core.router import Router, RouterThresholds
 from assistant.core.slots import SlotExtractor
 from assistant.core.voice import VoiceLoop, beep
+from assistant.flows.alerts import AlarmFlow, TimerFlow
+from assistant.flows.calculator import CalculatorFlow
 from assistant.flows.calendar import CreateEventFlow, UpdateEventFlow
 from assistant.flows.chat import ChatFlow
+from assistant.flows.clock import ClockFlow
+from assistant.flows.convert import ConvertFlow
 from assistant.flows.listening_mode import ListeningModeFlow
+from assistant.flows.lists import ListsFlow
+from assistant.flows.memory import MemoryFlow
 from assistant.flows.music import MusicControlFlow, PlayMusicFlow
 from assistant.flows.weather import WeatherFlow
 from assistant.ports.decision import DecisionModel
 from assistant.ports.flow import FlowHandler
-from assistant.ports.language import LanguageModel
+from assistant.ports.language import LanguageModel, Preloadable
 from assistant.ports.music import MusicPlayer
 from assistant.ports.speech import SpeechToText, TextToSpeech
+from assistant.ports.store import DocumentStore
 from assistant.ports.tools import ToolClient, ToolSpec
 from assistant.ports.weather import WeatherProvider
 
@@ -74,6 +84,12 @@ def _openai_compat(settings: AdapterSettings, profile: Profile) -> LanguageModel
     return OpenAICompatLanguageModel(client, s)
 
 
+def _ollama(settings: AdapterSettings, profile: Profile) -> LanguageModel:
+    s = OllamaSettings.model_validate(settings.options)
+    client = _http(profile, base_url=s.base_url, timeout=s.timeout_seconds, api_key_env=s.api_key_env)
+    return OllamaLanguageModel(client, s)
+
+
 def _open_meteo(settings: AdapterSettings, profile: Profile) -> WeatherProvider:
     timeout = float(settings.options.get("timeout_seconds", 10.0))
     home = profile.assistant
@@ -99,6 +115,7 @@ DECISION_ADAPTERS: dict[str, Factory[DecisionModel]] = {
 LLM_ADAPTERS: dict[str, Factory[LanguageModel]] = {
     "fake": lambda s, p: fakes.ScriptedLanguageModel(),
     "openai_compat": _openai_compat,
+    "ollama": _ollama,
 }
 WEATHER_ADAPTERS: dict[str, Factory[WeatherProvider]] = {
     "fake": lambda s, p: fakes.FakeWeatherProvider(),
@@ -107,6 +124,10 @@ WEATHER_ADAPTERS: dict[str, Factory[WeatherProvider]] = {
 MUSIC_ADAPTERS: dict[str, Factory[MusicPlayer]] = {
     "fake": lambda s, p: fakes.FakeMusicPlayer(),
     "brave_youtube": _brave_youtube,
+}
+STORAGE_ADAPTERS: dict[str, Factory[DocumentStore]] = {
+    "memory": lambda s, p: fakes.MemoryStore(),
+    "json_file": lambda s, p: JsonFileStore(Path(s.options["dir"])),
 }
 
 
@@ -200,15 +221,26 @@ async def build_assistant(profile: Profile, capabilities_path: Path) -> Assistan
 
     decider = build(DECISION_ADAPTERS, profile.decision, profile, "decision")
     llm = build(LLM_ADAPTERS, profile.llm, profile, "llm")
+    if isinstance(llm, Preloadable):
+        await llm.preload()
     weather = build(WEATHER_ADAPTERS, profile.weather, profile, "weather")
     music = build(MUSIC_ADAPTERS, profile.music, profile, "music")
+    store = build(STORAGE_ADAPTERS, profile.storage, profile, "storage")
     tool_clients = build_tool_clients(profile)
 
     listening = ListeningController(
         ListeningMode(profile.dialogue.initial_mode), follow_up_seconds=profile.dialogue.follow_up_seconds
     )
+    alerts = AlertScheduler(store, clock)
     flows: dict[str, FlowHandler] = {
         "weather": WeatherFlow(weather, profile.assistant.home_location, today),
+        "timer": TimerFlow(alerts, clock),
+        "alarm": AlarmFlow(alerts, clock),
+        "lists": ListsFlow(store),
+        "memory": MemoryFlow(store, clock),
+        "date_time": ClockFlow(clock),
+        "unit_conversion": ConvertFlow(),
+        "math": CalculatorFlow(),
         "play_music": PlayMusicFlow(music),
         "music_control": MusicControlFlow(music),
         "listening_mode": ListeningModeFlow(listening),
@@ -230,5 +262,7 @@ async def build_assistant(profile: Profile, capabilities_path: Path) -> Assistan
         decider,
         confirm_threshold=profile.router.confirm_threshold,
         max_reprompts=profile.dialogue.max_reprompts,
+        follow_up_threshold=profile.router.follow_up_threshold,
+        follow_up_seconds=profile.dialogue.context_seconds,
     )
-    return Assistant(dialogue, listening)
+    return Assistant(dialogue, listening, alerts)
