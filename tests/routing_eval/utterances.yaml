@@ -1,0 +1,162 @@
+# Labelled utterances for `assistant eval-router`.
+#   expect: the capability id that must be chosen, or "none" for requests the
+#           assistant must not act on. Items labelled none may also list
+#           `also_ok` ids that are acceptable answers (e.g. chat).
+# Keep phrasings out of config/capabilities.yaml's examples so this measures generalisation.
+
+weather:
+  - is it going to rain today
+  - do I need an umbrella this afternoon
+  - what's the forecast for the weekend
+  - how hot will it be tomorrow
+  - is it cold outside
+  - what's the temperature in Boston right now
+  - will it snow in Tahoe on Saturday
+  - should I bring a jacket tonight
+  - weather in Tokyo on Friday
+  - is it going to be sunny tomorrow
+  - what's the high today
+  - any storms coming this week
+  - how windy is it going to be
+  - forecast for Seattle next Tuesday
+  - is it nice out
+
+play_music:
+  - play some Beatles
+  - I want to hear Hotel California
+  - put on lo-fi beats
+  - play Taylor Swift
+  - can you play the new Kendrick album
+  - play something relaxing
+  - throw on some classic rock
+  - play Clair de Lune
+  - I'm in the mood for jazz
+  - play Mr. Brightside by The Killers
+  - play music for studying
+  - play the song Dancing Queen
+  - start some workout music
+  - play a song
+  - play Despacito
+
+music_control:
+  - pause
+  - stop the music
+  - turn the volume down
+  - louder please
+  - resume the song
+  - unpause
+  - volume to 20 percent
+  - make it quieter
+  - pause the song for a sec
+  - turn it down a bit
+  - keep going with the music
+  - mute the music
+  - set volume to max
+  - crank it up
+  - stop playing
+
+listening_mode:
+  - stop listening to me
+  - go to sleep
+  - turn off the microphone
+  - enter conversation mode
+  - you can listen all the time now
+  - only respond when I say the wake word
+  - switch back to wake word mode
+  - leave me alone for a while
+  - start listening to everything
+  - mute yourself
+  - be quiet and stop listening
+  - talk with me without the wake word
+
+read_email:
+  - check my email
+  - any new emails
+  - did I get an email from the bank
+  - read me my unread messages
+  - what's in my inbox
+  - do I have mail from Amazon
+  - summarize my latest email
+  - anything from my boss today
+  - read the last email from Jessica
+  - did the airline send me anything
+  - how many unread emails do I have
+  - what did the school email about
+
+read_calendar:
+  - what's on my schedule today
+  - do I have any meetings tomorrow
+  - am I free Thursday at 3
+  - what time is my dentist appointment
+  - what does my week look like
+  - when's my next meeting
+  - anything on my calendar this weekend
+  - what's my first appointment tomorrow morning
+  - do I have plans tonight
+  - when am I meeting Sarah
+  - read my agenda for Monday
+  - how busy am I on Friday
+
+create_calendar_event:
+  - schedule a meeting with Alex tomorrow at 10
+  - add a dentist appointment on December 3rd at 2pm
+  - put gym on my calendar every Monday at 7
+  - create an event called team dinner Friday at 7pm
+  - remind me on my calendar to call grandma Sunday afternoon
+  - book an hour for focus time tomorrow morning
+  - add mom's birthday party Saturday at noon
+  - set up a call with the plumber Wednesday at 9
+  - block off Friday afternoon for errands
+  - "new calendar event: haircut Tuesday 4pm"
+  - schedule lunch with Priya next Thursday
+  - put the parent teacher conference on my calendar for the 12th at 6
+
+update_calendar_event:
+  - move my dentist appointment to Thursday
+  - push the team meeting back an hour
+  - reschedule my call with Alex to 4pm
+  - change lunch with Priya to Friday
+  - rename my 3 o'clock to design review
+  - can you move the haircut to next week
+  - shift standup to 10am tomorrow
+  - postpone the plumber visit to Saturday morning
+
+chat:
+  - tell me a joke
+  - how many teaspoons are in a tablespoon
+  - who wrote Pride and Prejudice
+  - what's 15 percent of 80
+  - how do you say thank you in Japanese
+  - why is the sky blue
+  - give me a fun fact
+  - how long should I boil an egg
+  - what's the capital of Canada
+  - spell necessary
+  - how far is the moon
+  - convert 10 miles to kilometers
+
+none:
+  - text: turn on the living room lights
+  - text: order a pizza from Domino's
+  - text: call an Uber to the airport
+  - text: what's Apple's stock price
+  - text: send a text to my brother
+  - text: lock the front door
+  - text: set the thermostat to 70
+  - text: book a flight to New York
+  - text: buy more paper towels
+  - text: search the web for cheap laptops
+  - text: open Netflix on the TV
+  - text: transfer 50 dollars to Sam
+  - text: who won the game last night
+    also_ok: [chat]
+  - text: what's the news today
+    also_ok: [chat]
+  - text: start the vacuum
+  - text: post this on Instagram
+  - text: honey can you grab the milk
+  - text: I told him the meeting went fine
+  - text: did you feed the dog
+  - text: the music at the party was so loud
+  - text: we should check the weather before the trip
+  - text: I'll email her later

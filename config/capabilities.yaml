@@ -1,0 +1,214 @@
+# Capability registry. For each request the decision model picks one id below, or "none".
+#
+#   kind: flow  -> deterministic handler in src/assistant/flows (registered in app.py)
+#   kind: mcp   -> one pinned tool on one MCP server from the profile's mcp_servers
+#
+#   slots           JSON Schema for the arguments the small LLM extracts. On an mcp
+#                   capability, omit it to use the tool's own inputSchema.
+#   prompts         question to ask when a required slot is missing
+#   defaults        argument values used when the user does not give one
+#   confirm         ask "should I go ahead?" before running (use for anything that writes)
+#   render          mcp only: "summary" (LLM turns the result into speech) or "fixed" text
+#   x-verbatim      on a slot property: drop the value unless it uses the user's own words
+#
+# Adding a capability = one entry here (+ a handler in flows/ for kind: flow).
+
+capabilities:
+  - id: weather
+    kind: flow
+    description: Weather forecast or current conditions (rain, temperature, wind, what to wear) for a place and day.
+    examples:
+      - what's the weather like
+      - will it rain tomorrow
+      - how cold will it be in Chicago on Saturday
+    slots:
+      type: object
+      properties:
+        location:
+          type: string
+          description: The city or place the user named, for example "Tahoe" or "Boston".
+          x-verbatim: true
+        date:
+          type: string
+          format: date
+          description: Day of the forecast as YYYY-MM-DD.
+
+  - id: play_music
+    kind: flow
+    description: Start playing music - a song, artist, album, genre or mood.
+    examples:
+      - play Bohemian Rhapsody
+      - put on some jazz
+      - play something by Fleetwood Mac
+    slots:
+      type: object
+      properties:
+        query:
+          type: string
+          description: >-
+            The song, artist, album or genre to search for, without words like "play" or "put on",
+            for example "Mr. Brightside The Killers". Only when the user named something.
+          x-verbatim: true
+      required: [query]
+    prompts:
+      query: What would you like me to play?
+
+  - id: music_control
+    kind: flow
+    description: Control music that is already playing - pause, resume, stop, louder, quieter, set volume.
+    examples:
+      - pause the music
+      - keep playing
+      - stop the song
+      - turn it up
+      - set the volume to 30
+    slots:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [pause, resume, stop, volume_up, volume_down, set_volume]
+          description: Use set_volume whenever the user gives a number or says max/min; volume_up/volume_down otherwise.
+        level:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Volume percent for set_volume (max is 100, min is 0).
+      required: [action]
+    prompts:
+      action: Should I pause, resume, stop, or change the volume?
+
+  - id: listening_mode
+    kind: flow
+    description: "Change how this assistant listens to you: mute its microphone or go to sleep, wake word only, or always-on conversation mode."
+    examples:
+      - stop listening
+      - go to sleep
+      - switch to conversation mode
+      - only listen for the wake word
+    slots:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [mute, wake_word, conversation]
+      required: [mode]
+    prompts:
+      mode: Should I stop listening, listen for the wake word only, or switch to conversation mode?
+
+  # Google's Gmail and Calendar MCP servers (Developer Preview). Tool names and argument
+  # names follow their published tool reference; pinned tools are checked against the live
+  # server at startup. List what a server offers with: poetry run assistant mcp-tools gmail
+  - id: read_email
+    kind: mcp
+    description: Check the user's email inbox - new, unread or specific messages, who sent what.
+    examples:
+      - read my latest emails
+      - do I have any email from Sam
+      - what did the landlord email me about
+    mcp: {server: gmail, tool: search_threads}
+    slots:
+      type: object
+      properties:
+        query:
+          type: string
+          description: >-
+            Gmail search query in Gmail search syntax, for example "is:unread", "from:sam",
+            "subject:rent newer_than:7d". Leave out to get the latest messages.
+    defaults: {pageSize: 5}
+    render:
+      mode: summary
+      instruction: Mention sender and subject for each message, newest first, at most five.
+
+  - id: read_calendar
+    kind: mcp
+    description: Look up events already on the user's calendar - schedule, meetings, free time (read only, changes nothing).
+    examples:
+      - what's on my calendar today
+      - do I have anything Friday afternoon
+      - when is my next meeting
+    mcp: {server: calendar, tool: list_events}
+    slots:
+      type: object
+      properties:
+        startTime:
+          type: string
+          format: date-time
+          description: Start of the time range the user asked about. Leave out for "next" or "upcoming".
+        endTime:
+          type: string
+          format: date-time
+          description: End of the time range the user asked about, for example the end of the day they named.
+        fullText:
+          type: string
+          description: Words to search event titles for, only if the user named a specific event or person.
+    defaults: {pageSize: 10, orderBy: startTime}
+    render:
+      mode: summary
+      instruction: Give each event's start time and title in order. Say plainly if there are none.
+
+  - id: create_calendar_event
+    kind: flow
+    description: Create a new calendar event - schedule, book, add, block off or put something on the calendar.
+    examples:
+      - add lunch with Sam at noon on Thursday
+      - put a dentist appointment on my calendar for March 3rd at 9
+      - schedule a call with mom tomorrow at 6
+    slots:
+      type: object
+      properties:
+        summary:
+          type: string
+          description: Title of the event, for example "Lunch with Sam".
+        startTime:
+          type: string
+          format: date-time
+          description: When it starts.
+          x-verbatim: true
+        endTime:
+          type: string
+          format: date-time
+          description: When it ends, only if the user said so. Otherwise it lasts an hour.
+        location:
+          type: string
+          description: Where it is, only if the user said so.
+      required: [summary, startTime]
+    prompts:
+      summary: What should I call the event?
+      startTime: What day and time should I put it at?
+    confirm: true
+
+  - id: update_calendar_event
+    kind: flow
+    description: Change an event already on the calendar - move, reschedule or rename it.
+    examples:
+      - move my dentist appointment to 3pm
+      - reschedule lunch with Sam to Friday
+      - rename the team sync to planning meeting
+    slots:
+      type: object
+      properties:
+        event:
+          type: string
+          description: Words identifying the existing event, for example "dentist" or "lunch with Sam".
+          x-verbatim: true
+        newStartTime:
+          type: string
+          format: date-time
+          description: The new start time the user asked for, only if they said one.
+          x-verbatim: true
+        newSummary:
+          type: string
+          description: A different new title, only if the user explicitly asked to rename the event.
+      required: [event]
+    prompts:
+      event: Which event should I change?
+    confirm: true
+
+  - id: chat
+    kind: flow
+    description: Answer a general-knowledge question, do math or unit conversions, define or spell a word, or tell a joke.
+    examples:
+      - tell me a joke
+      - how many ounces are in a cup
+      - what's the capital of Australia

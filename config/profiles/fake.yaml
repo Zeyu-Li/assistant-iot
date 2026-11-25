@@ -1,0 +1,31 @@
+# Every port faked: runs the whole turn loop with no models, accounts or network.
+# Routing uses word overlap and slot extraction returns nothing, so required slots
+# are always asked for. Useful for exercising the dialogue loop, not for accuracy.
+assistant:
+  home_location: Mountain View
+  units: fahrenheit
+
+decision: {adapter: fake}
+llm: {adapter: fake}
+weather: {adapter: fake}
+music: {adapter: fake}
+
+mcp_servers:
+  gmail:
+    adapter: fake
+    tools:
+      search_threads:
+        response: "From: Sam. Subject: Dinner Friday?"
+  calendar:
+    adapter: fake
+    tools:
+      list_events:
+        response: '{"events": [{"id": "evt1", "summary": "Dentist", "start": "2026-11-28T14:00:00"}]}'
+      create_event: {}
+      update_event: {}
+
+router:
+  route_threshold: 0.5
+  include_examples: true   # the word-overlap fake needs the example phrasings
+dialogue:
+  initial_mode: wake_word

@@ -1,0 +1,80 @@
+# Development on an Apple Silicon Mac.
+#   decision: OpenJev-1.7B on localhost (scripts/run_openjev.sh)
+#   llm:      Ollama's OpenAI-compatible endpoint
+assistant:
+  home_location: Mountain View
+  home_coordinates: [37.386, -122.084]   # Mountain View, CA
+  units: fahrenheit
+
+decision:
+  # Alternative: Laya via scripts/run_decider.sh (base_url http://127.0.0.1:8090,
+  # model: english, yes_no_as: choice) - smaller, but only ~72% on tests/routing_eval
+  # versus ~93% for OpenJev-1.7B.
+  adapter: systemone_http
+  base_url: http://127.0.0.1:8092
+  model: openjev
+  yes_no_as: noul         # OpenJev separates "talking to me?" better with its native yes/no
+  timeout_seconds: 30
+
+llm:
+  adapter: openai_compat
+  base_url: http://127.0.0.1:11434/v1
+  model: gemma3:12b
+
+weather: {adapter: open_meteo}
+
+# Deferred: the brave_youtube adapter exists but live playback is unverified (YouTube
+# barely loads through the corporate network here). To try it:
+#   music: {adapter: brave_youtube, initial_volume: 60, timeout_seconds: 120}
+music: {adapter: fake}
+
+# Google's Gmail and Calendar MCP servers (Developer Preview). To enable:
+#   1. Join the Google Workspace Developer Preview Program; in a Google Cloud project enable
+#      the Gmail API, Gmail MCP API, Google Calendar API and Calendar MCP API.
+#   2. Create an OAuth client of type "Desktop app"; save its JSON as google_oauth.client_secrets.
+#   3. poetry run assistant google-login
+#   4. poetry run assistant mcp-tools gmail   (checks the connection)
+#   5. Remove the four capabilities below from disabled_capabilities.
+mcp_servers:
+  gmail:
+    adapter: mcp_http
+    url: https://gmailmcp.googleapis.com/mcp/v1
+    auth: google
+  calendar:
+    adapter: mcp_http
+    url: https://calendarmcp.googleapis.com/mcp/v1
+    auth: google
+google_oauth:
+  client_secrets: ~/.config/assistant-iot/google-client-secret.json
+  token_store: keyring
+disabled_capabilities: [read_email, read_calendar, create_calendar_event, update_calendar_event]
+
+router:
+  # OpenJev-1.7B on tests/routing_eval (135 utterances, all capabilities on), 2026-11-25:
+  #   0.40 -> 92.6% correct, 4 wrong routes, 1 declined, 5 false accepts (mostly overheard remarks)
+  #   0.60 -> 91.1% correct, 3 wrong routes, 5 declined, 4 false accepts
+  # Confirmation (agree/decline choice): every "yes" >= 0.70, every "no"/"um" <= 0.32.
+  route_threshold: 0.4
+  addressed_threshold: 0.8   # open-mic only; this check on its own is weak
+  confirm_threshold: 0.6
+  include_examples: false    # example phrasings lowered OpenJev's accuracy to ~88%
+
+dialogue:
+  initial_mode: wake_word
+
+voice:   # models from: poetry run python scripts/fetch_models.py
+  wake_phrases: ["hey computer"]
+  wake: {adapter: sherpa_kws, dir: models/kws, threshold: 0.25}
+  vad: {adapter: silero, model: models/vad/silero_vad.onnx, min_silence_seconds: 0.6}
+  stt: {adapter: moonshine, dir: models/asr-moonshine, threads: 2}
+  tts: {adapter: piper, dir: models/tts-piper, model_file: en_US-lessac-medium.onnx, threads: 2}
+  # higher quality but ~10x slower on CPU: {adapter: kokoro, dir: models/tts-kokoro, speaker_id: 0}
+  # input_device: "MacBook Pro Microphone"   # default: the system input (currently AirPods)
+
+network:
+  allowed_hosts:
+    - geocoding-api.open-meteo.com
+    - api.open-meteo.com
+    - gmailmcp.googleapis.com
+    - calendarmcp.googleapis.com
+    - oauth2.googleapis.com
